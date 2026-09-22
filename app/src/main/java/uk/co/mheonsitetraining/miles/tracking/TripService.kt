@@ -58,7 +58,7 @@ class TripService : Service() {
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            result.locations.forEach(::onLocation)
+            result.locations.forEach { onLocation(it) }
         }
     }
 
@@ -101,9 +101,13 @@ class TripService : Service() {
                     ACTION_START -> begin()
                     ACTION_STOP, ACTION_CAR_DISCONNECTED -> finishAndStop()
                     ACTION_RESUME -> {
-                        val open = dao.inProgress()
-                        if (open != null && tripId == null) resume(open) else if (tripId == null) finishAndStop()
+                        // Android restarted the service after killing it mid-trip.
+                        if (tripId == null) {
+                            val open = dao.inProgress()
+                            if (open != null) resume(open) else finishAndStop()
+                        }
                     }
+                    else -> Unit
                 }
             }
         }
