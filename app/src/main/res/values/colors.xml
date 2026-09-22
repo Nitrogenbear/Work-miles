@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sampled from the MHE Onsite Training logo -->
+    <color name="mhe_navy">#FF132D50</color>
+    <color name="mhe_orange">#FFE26D0E</color>
+    <color name="mhe_grey">#FF676767</color>
+    <color name="mhe_background">#FFF4F5F7</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
