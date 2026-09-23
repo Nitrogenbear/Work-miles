@@ -26,6 +26,13 @@ Every push builds an installable APK on GitHub Actions:
    **MHE-Miles-apk** artifact (a zip containing the `.apk`).
 2. Copy it to your phone and open it. Allow "install unknown apps" when Android asks.
 
+### Signing
+
+Builds are signed with `signing/mhe-miles.p12`, so each new APK installs over the old one and
+keeps your trips. The key is locked with a password stored as the repository secret
+`SIGNING_PASSWORD` (Settings → Secrets and variables → Actions). Keep a copy of that password:
+if it's lost, the next version can only be installed after uninstalling, which deletes your trips.
+
 ## First-time setup (in the app's **Setup** tab)
 
 1. Pair your phone with the Nissan as normal (Phone settings → Bluetooth).

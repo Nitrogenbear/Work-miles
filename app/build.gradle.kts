@@ -19,12 +19,26 @@ android {
         versionName = "1.1"
     }
 
+    // Every build must be signed with the same key, or Android refuses to install updates
+    // over the top. The key is in the repo but locked; its password is the SIGNING_PASSWORD
+    // GitHub secret (or environment variable when building locally).
+    val signingPassword = System.getenv("SIGNING_PASSWORD")
+    signingConfigs {
+        if (!signingPassword.isNullOrEmpty()) {
+            create("mhe") {
+                storeFile = rootProject.file("signing/mhe-miles.p12")
+                storeType = "PKCS12"
+                storePassword = signingPassword
+                keyAlias = "mhe-miles"
+                keyPassword = signingPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so the APK installs straight from CI.
-            // Swap in your own signing config before publishing to the Play Store.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("mhe") ?: signingConfigs.getByName("debug")
         }
     }
 

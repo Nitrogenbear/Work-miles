@@ -21,7 +21,18 @@ jobs:
       - name: Unit tests (tax year, HMRC rates, distance, CSV)
         run: ./gradlew -p core test
 
+      - name: Check signing password
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_PASSWORD" ]; then
+            echo "::error::Add the SIGNING_PASSWORD secret (Settings > Secrets and variables > Actions). Without it each build gets a different signature and phones refuse to install updates."
+            exit 1
+          fi
+
       - name: Build APK
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: ./gradlew :app:assembleRelease
 
       - name: Upload APK
