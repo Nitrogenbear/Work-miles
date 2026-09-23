@@ -38,6 +38,17 @@ Every push builds an installable APK on GitHub Actions:
    - Battery **Unrestricted**. Without this, Android 12+ may block recording from starting. You would then get a
      "Car connected – tap to start recording" notification instead.
 
+   - **Link car to app**. Android shows a "link device" dialog; approve it. The phone then treats
+     the car like a paired watch, so the app can start recording from the background.
+
+## If a trip didn't record
+
+- Open **Setup → Right now** while sitting in the car. It shows whether the phone can see the car,
+  whether it's charging, and whether it's recording. Opening the app in the car also starts
+  recording if it was missed.
+- **Setup → Activity log** lists every Bluetooth connection the phone reported, and whether
+  recording started or what stopped it. Tap **Share** to send it on.
+
 Some phones (Samsung, Xiaomi, Huawei and others) have extra battery savers. If trips don't start by themselves, also
 set MHE Miles to *Unrestricted* / *Never sleeping* in the phone's battery settings.
 

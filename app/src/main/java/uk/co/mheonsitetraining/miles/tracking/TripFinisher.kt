@@ -24,6 +24,7 @@ object TripFinisher {
         val minMiles = AppSettings.get(context).current.minTripMiles
         if (metresToMiles(metres) < minMiles) {
             // Engine on but car never really moved (e.g. sat on the drive) - not worth keeping.
+            EventLog.log(context, "Trip discarded: shorter than the $minMiles mile minimum")
             dao.delete(trip)
             return
         }

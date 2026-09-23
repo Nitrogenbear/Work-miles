@@ -29,9 +29,19 @@ class AppSettings private constructor(context: Context) {
     val current: Settings get() = state.value
 
     /** Whether the car's head unit is connected right now (kept up to date by broadcasts). */
-    var carConnected: Boolean
-        get() = prefs.getBoolean(KEY_CAR_CONNECTED, false)
-        set(value) = prefs.edit().putBoolean(KEY_CAR_CONNECTED, value).apply()
+    val carConnected: Boolean
+        get() = prefs.getStringSet(KEY_CAR_CHANNELS, emptySet()).orEmpty().isNotEmpty()
+
+    /** Records one Bluetooth connection to the car ("link", "calls" or "media") going up or down. */
+    fun setCarChannel(channel: String, connected: Boolean) {
+        val channels = prefs.getStringSet(KEY_CAR_CHANNELS, emptySet()).orEmpty().toMutableSet()
+        if (connected) channels += channel else channels -= channel
+        prefs.edit().putStringSet(KEY_CAR_CHANNELS, channels).commit()
+    }
+
+    fun clearCarChannels() {
+        prefs.edit().putStringSet(KEY_CAR_CHANNELS, emptySet()).commit()
+    }
 
     fun update(transform: (Settings) -> Settings) {
         val new = transform(current)
@@ -67,7 +77,7 @@ class AppSettings private constructor(context: Context) {
     }
 
     companion object {
-        private const val KEY_CAR_CONNECTED = "carConnected"
+        private const val KEY_CAR_CHANNELS = "carChannels"
 
         @Volatile
         private var instance: AppSettings? = null

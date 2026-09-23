@@ -1,6 +1,18 @@
 package uk.co.mheonsitetraining.miles.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.IntentFilter
+import android.os.BatteryManager
+import android.widget.Toast
+import androidx.activity.result.IntentSenderRequest
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.font.FontFamily
+import uk.co.mheonsitetraining.miles.tracking.CarConnectionReceiver
+import uk.co.mheonsitetraining.miles.tracking.CarPresence
+import uk.co.mheonsitetraining.miles.tracking.EventLog
+import uk.co.mheonsitetraining.miles.tracking.TripStatus
+import uk.co.mheonsitetraining.miles.tracking.TripStatusStore
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
 import android.content.Context
@@ -74,6 +86,24 @@ fun SetupScreen(viewModel: MilesViewModel) {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh++ }
 
     var choosingCar by remember { mutableStateOf(false) }
+    val linkLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        EventLog.log(context, if (result.resultCode == Activity.RESULT_OK) "Car link approved" else "Car link cancelled")
+        refresh++
+    }
+    val carLinked = remember(refresh, settings.carAddress) { CarPresence.isLinked(context, settings.carAddress) }
+    val logLines by EventLog.lines.collectAsStateWithLifecycle()
+    val recorderStatus by TripStatusStore.status.collectAsStateWithLifecycle()
+
+    // Live check of the two triggers, so you can test in the car.
+    var carNow by remember { mutableStateOf<Boolean?>(null) }
+    val chargingNow = remember(refresh, recorderStatus) { isCharging(context) }
+    LaunchedEffect(refresh, settings.carAddress) {
+        carNow = if (settings.carAddress == null) {
+            null
+        } else {
+            CarPresence.isCarConnected(context) { CarConnectionReceiver.isCar(it, store) }
+        }
+    }
 
     val fineLocation = remember(refresh) { granted(context, Manifest.permission.ACCESS_FINE_LOCATION) }
     val backgroundLocation = remember(refresh) { granted(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
@@ -114,6 +144,20 @@ fun SetupScreen(viewModel: MilesViewModel) {
             ) { Text(if (settings.carName == null) "Choose car Bluetooth" else "Change car") }
         }
 
+        if (settings.carAddress != null) {
+            SectionTitle("Right now")
+            BrandCard(Modifier.fillMaxWidth()) {
+                CheckRow("Connected to ${settings.carName ?: "car"}", carNow)
+                CheckRow("Phone charging", chargingNow)
+                CheckRow(
+                    "Recording",
+                    recorderStatus is TripStatus.Recording,
+                    detail = if (recorderStatus == TripStatus.WaitingForCharge) "Waiting for charging" else null,
+                )
+                TextButton(onClick = { refresh++ }) { Text("Check again", color = Brand.Orange) }
+            }
+        }
+
         SectionTitle("Automatic recording")
         BrandCard(Modifier.fillMaxWidth()) {
             SwitchRow(
@@ -141,6 +185,25 @@ fun SetupScreen(viewModel: MilesViewModel) {
             if (Build.VERSION.SDK_INT >= 31) {
                 PermissionRow("Nearby devices", "Detects your car's Bluetooth", bluetooth) {
                     permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT))
+                }
+            }
+            if (CarPresence.canLink(context)) {
+                PermissionRow(
+                    "Link car to app",
+                    if (settings.carAddress == null) "Choose your car first" else "Lets Android start recording when the car connects",
+                    carLinked,
+                    enabled = settings.carAddress != null,
+                ) {
+                    val address = settings.carAddress ?: return@PermissionRow
+                    CarPresence.link(
+                        context,
+                        address,
+                        onShowDialog = { sender -> linkLauncher.launch(IntentSenderRequest.Builder(sender).build()) },
+                        onError = { message ->
+                            EventLog.log(context, "Car link failed: $message")
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        },
+                    )
                 }
             }
             PermissionRow("Location", "Measures the miles you drive", fineLocation) {
@@ -193,6 +256,43 @@ fun SetupScreen(viewModel: MilesViewModel) {
             )
         }
 
+        SectionTitle("Activity log")
+        BrandCard(Modifier.fillMaxWidth()) {
+            Text(
+                "What the app noticed on your recent drives. If a trip doesn't record, tap Share and send this to whoever supports the app.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Brand.Grey,
+            )
+            if (logLines.isEmpty()) {
+                Text("Nothing yet.", style = MaterialTheme.typography.bodySmall)
+            }
+            logLines.take(40).forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    val report = diagnosticReport(
+                        context, settings.carName, settings.carAddress,
+                        mapOf(
+                            "Nearby devices" to bluetooth,
+                            "Location" to fineLocation,
+                            "Location all the time" to backgroundLocation,
+                            "Notifications" to notifications,
+                            "Battery unrestricted" to batteryUnrestricted,
+                            "Car linked" to carLinked,
+                            "Auto recording" to settings.autoTracking,
+                            "Only when charging" to settings.requireCharging,
+                        ),
+                    )
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(Intent.EXTRA_SUBJECT, "MHE Miles activity log")
+                        .putExtra(Intent.EXTRA_TEXT, report)
+                    context.startActivity(Intent.createChooser(send, "Share activity log"))
+                }) { Text("Share", color = Brand.Orange) }
+                TextButton(onClick = { EventLog.clear(context) }) { Text("Clear", color = Brand.Grey) }
+            }
+        }
+
         Column(
             Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -210,6 +310,40 @@ fun SetupScreen(viewModel: MilesViewModel) {
                 choosingCar = false
             },
         )
+    }
+}
+
+@Composable
+private fun CheckRow(label: String, ok: Boolean?, detail: String? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        val (text, colour) = when {
+            detail != null -> detail to Brand.Orange
+            ok == null -> "…" to Brand.Grey
+            ok -> "✓ Yes" to Brand.Success
+            else -> "✗ No" to Brand.Grey
+        }
+        Text(text, color = colour, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+private fun isCharging(context: Context): Boolean {
+    val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return false
+    return battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+}
+
+private fun diagnosticReport(context: Context, carName: String?, carAddress: String?, checks: Map<String, Boolean>): String {
+    val version = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    } catch (e: Exception) {
+        "?"
+    }
+    return buildString {
+        appendLine("MHE Miles $version on ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+        appendLine("Car: ${carName ?: "not chosen"} ${carAddress ?: ""}")
+        checks.forEach { (name, ok) -> appendLine("$name: ${if (ok) "yes" else "NO"}") }
+        appendLine()
+        append(EventLog.text())
     }
 }
 

@@ -65,6 +65,7 @@ class TripService : Service() {
     private val powerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (TripStatusStore.status.value == TripStatus.WaitingForCharge) {
+                EventLog.log(context, "Phone started charging")
                 scope.launch { mutex.withLock { begin() } }
             }
         }
@@ -80,6 +81,7 @@ class TripService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: ACTION_RESUME
+        EventLog.log(this, "Recorder: ${action.substringAfterLast('.').lowercase().replace('_', ' ')}")
         if (!enterForeground()) {
             if (action == ACTION_CAR_CONNECTED) Notifications.promptToStart(this)
             stopSelf()
@@ -91,9 +93,11 @@ class TripService : Service() {
                     ACTION_CAR_CONNECTED -> {
                         registerPowerReceiver()
                         if (tripId == null) {
-                            if (!settings.current.requireCharging || isCharging()) {
+                            val charging = isCharging()
+                            if (!settings.current.requireCharging || charging) {
                                 begin()
                             } else {
+                                EventLog.log(this@TripService, "Waiting for the phone to charge")
                                 setStatus(TripStatus.WaitingForCharge)
                             }
                         }
@@ -125,6 +129,7 @@ class TripService : Service() {
     } catch (e: Exception) {
         // Missing location permission, or Android blocked a background start.
         Log.w(TAG, "Could not start recording", e)
+        EventLog.log(this, "Android refused to start recording: ${e.javaClass.simpleName} ${e.message ?: ""}")
         false
     }
 
@@ -141,10 +146,12 @@ class TripService : Service() {
         }
         val now = System.currentTimeMillis()
         val id = dao.insert(TripEntity(startMillis = now))
+        EventLog.log(this, "Trip started")
         startRecording(id, now, DistanceAccumulator())
     }
 
     private fun resume(trip: TripEntity) {
+        EventLog.log(this, "Carrying on with the trip started at ${java.text.DateFormat.getTimeInstance().format(trip.startMillis)}")
         startRecording(trip.id, trip.startMillis, DistanceAccumulator(initialMetres = trip.distanceMetres))
     }
 
@@ -168,6 +175,7 @@ class TripService : Service() {
             locationUpdatesOn = true
         } catch (e: SecurityException) {
             Log.w(TAG, "Location permission missing", e)
+            EventLog.log(this, "Can't use GPS: location permission is missing")
         }
     }
 
@@ -187,6 +195,7 @@ class TripService : Service() {
         )
         val wasFirst = accumulator.firstAccepted == null
         if (!accumulator.add(fix)) return
+        if (wasFirst) EventLog.log(this, "GPS fix received (accuracy ${fix.accuracyMetres.toInt()} m)")
 
         val metres = accumulator.totalMetres
         val now = System.currentTimeMillis()
@@ -214,6 +223,7 @@ class TripService : Service() {
         val id = tripId
         tripId = null
         if (id != null) {
+            EventLog.log(this, "Trip ended: ${uk.co.mheonsitetraining.miles.core.CsvExporter.formatMiles(accumulator.totalMetres / 1609.344)} miles")
             TripFinisher.finish(this, id, accumulator.totalMetres, accumulator.firstAccepted, accumulator.lastAccepted)
         } else {
             TripFinisher.finishOrphan(this)
@@ -284,6 +294,7 @@ class TripService : Service() {
             } catch (e: Exception) {
                 // Android 12+ can refuse background starts (e.g. battery optimisation is on).
                 Log.w(TAG, "Background start refused", e)
+                EventLog.log(context, "Android blocked recording from the background: ${e.javaClass.simpleName}")
                 Notifications.promptToStart(context)
             }
         }
