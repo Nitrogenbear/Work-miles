@@ -22,22 +22,22 @@ jobs:
         run: ./gradlew -p core test
 
       - name: Check signing password
+        id: signing
         env:
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          if [ -z "$SIGNING_PASSWORD" ]; then
-            echo "::error::Add the SIGNING_PASSWORD secret (Settings > Secrets and variables > Actions). Without it each build gets a different signature and phones refuse to install updates."
-            exit 1
-          fi
           PW="$(printf '%s' "$SIGNING_PASSWORD" | tr -d '[:space:]')"
-          # A fingerprint (not the password) to check the secret was entered correctly.
-          echo "Password length ${#PW}, fingerprint $(printf '%s' "$PW" | sha256sum | cut -c1-12)"
-          keytool -list -keystore signing/mhe-miles.p12 -storetype PKCS12 -storepass "$PW" | grep -q PrivateKeyEntry \
-            || { echo "::error::The SIGNING_PASSWORD secret doesn't unlock the signing key. Re-enter it."; exit 1; }
+          if [ -n "$PW" ] && keytool -list -keystore signing/mhe-miles.p12 -storetype PKCS12 -storepass "$PW" | grep -q PrivateKeyEntry; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "Signing key unlocked."
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SIGNING_PASSWORD is missing or doesn't unlock signing/mhe-miles.p12. This APK is signed with a temporary key, so it can't be installed over an existing copy without uninstalling first."
+          fi
 
       - name: Build APK
         env:
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SIGNING_PASSWORD: ${{ steps.signing.outputs.ok == 'true' && secrets.SIGNING_PASSWORD || '' }}
         run: ./gradlew :app:assembleRelease
 
       - name: Upload APK
