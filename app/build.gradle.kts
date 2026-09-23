@@ -22,7 +22,7 @@ android {
     // Every build must be signed with the same key, or Android refuses to install updates
     // over the top. The key is in the repo but locked; its password is the SIGNING_PASSWORD
     // GitHub secret (or environment variable when building locally).
-    val signingPassword = System.getenv("SIGNING_PASSWORD")
+    val signingPassword = System.getenv("SIGNING_PASSWORD")?.trim()
     signingConfigs {
         if (!signingPassword.isNullOrEmpty()) {
             create("mhe") {
